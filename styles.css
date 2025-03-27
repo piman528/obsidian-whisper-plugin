@@ -1,0 +1,80 @@
+/* プラグイン全体のスタイル */
+.whisper-recording {
+    color: red !important;
+}
+
+.whisper-error {
+    color: red;
+    font-weight: bold;
+}
+
+/* キャンセルボタンのスタイル */
+.whisper-cancel-button {
+    color: red;
+    cursor: pointer;
+}
+
+/* ファイル選択モーダルのスタイル */
+.whisper-file-selection-modal {
+    padding: 20px;
+}
+
+.whisper-file-selection-container {
+    margin: 20px 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.whisper-file-list {
+    margin-bottom: 15px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.whisper-file-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+}
+
+.whisper-file-item:last-child {
+    border-bottom: none;
+}
+
+.whisper-file-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.whisper-file-item.selected {
+    background-color: var(--background-modifier-active);
+}
+
+.whisper-file-name {
+    font-weight: bold;
+}
+
+.whisper-file-path {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+.whisper-button-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.whisper-select-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.whisper-select-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
