@@ -64,7 +64,6 @@ export class AudioProcessor {
             const filename = `Recording ${timestamp}`;
             const tempFilePath = path.join(this.tempDir, `${filename}.webm`);
 
-            // Stream形式でファイルに書き込む
             const buffer = Buffer.from(await audioBlob.arrayBuffer());
             await new Promise<void>((resolve, reject) => {
                 const writeStream = fs.createWriteStream(tempFilePath);
@@ -74,21 +73,13 @@ export class AudioProcessor {
                 writeStream.on('error', (err) => reject(err));
             });
 
-            // Convert to mp3 and wav
             const [tempMp3Path, wavPath] = await Promise.all([
                 this.convertToMp3(tempFilePath, filename),
                 this.convertToWav(tempFilePath)
             ]);
 
             try {
-                // デバッグ情報
-                console.log('Plugin Directory:', pluginDir);
-                console.log('Settings Audio Directory:', settings.audioDir);
-
-                // vaultBasePathの取得方法を修正
                 const vaultBasePath = path.resolve(path.dirname(pluginDir));
-                console.log('Vault Base Path:', vaultBasePath);
-
                 if (!vaultBasePath) {
                     throw new Error('Obsidianボールトのパスが取得できません');
                 }
@@ -96,31 +87,15 @@ export class AudioProcessor {
                 const absoluteAudioDir = path.isAbsolute(settings.audioDir)
                     ? settings.audioDir
                     : path.join(vaultBasePath, settings.audioDir);
-                console.log('Absolute Audio Directory:', absoluteAudioDir);
 
-                // ディレクトリの存在確認
-                const dirExists = await fs.promises.access(path.dirname(absoluteAudioDir))
-                    .then(() => true)
-                    .catch(() => false);
-                console.log('Parent Directory Exists:', dirExists);
-
-                // 保存先ディレクトリの作成を試みる
                 await fs.promises.mkdir(absoluteAudioDir, { recursive: true });
-                console.log('Directory Created');
-
                 const finalMp3Path = path.join(absoluteAudioDir, `${filename}.mp3`);
-                console.log('Final MP3 Path:', finalMp3Path);
 
-                // ソースファイルの存在確認
                 if (!fs.existsSync(tempMp3Path)) {
                     throw new Error(`ソースファイルが見つかりません: ${tempMp3Path}`);
                 }
 
-                // MP3ファイルを最終的な保存先に移動
                 await fs.promises.copyFile(tempMp3Path, finalMp3Path);
-                console.log('File Copied Successfully');
-
-                // ファイルが正しく保存されたか確認
                 if (!fs.existsSync(finalMp3Path)) {
                     throw new Error('MP3ファイルの保存に失敗しました');
                 }
@@ -132,20 +107,15 @@ export class AudioProcessor {
                 throw error;
             }
 
-            // Transcribe the audio
             const transcription = await this.runTranscription(wavPath, settings);
-
-            // MP3ファイルをバッファーとして読み取り
             const mp3Buffer = fs.readFileSync(tempMp3Path);
 
             try {
-                // Clean up temp files
                 fs.unlinkSync(tempFilePath);
                 fs.unlinkSync(wavPath);
                 fs.unlinkSync(tempMp3Path);
             } catch (error) {
                 console.error('一時ファイルの削除中にエラーが発生:', error);
-                // 一時ファイルの削除に失敗しても処理は続行
             }
 
             return {
@@ -172,12 +142,7 @@ export class AudioProcessor {
         const tempMp3Path = path.join(this.tempDir, `${filename}.mp3`);
         await new Promise<void>((resolve, reject) => {
             this.currentFfmpegCommand = ffmpeg(inputPath)
-                .inputOptions([
-                    '-f webm',  // 入力フォーマットを明示的に指定
-                    '-c:a opus',  // Web Audio APIのデフォルトコーデック
-                    '-analyzeduration 0',  // 入力ファイルの解析時間を短縮
-                    '-probesize 32768'  // プローブサイズを小さく設定
-                ])
+                .inputOptions(['-f webm', '-c:a opus', '-analyzeduration 0', '-probesize 32768'])
                 .toFormat('mp3')
                 .audioCodec('libmp3lame')
                 .audioBitrate(192)
@@ -202,12 +167,7 @@ export class AudioProcessor {
         const wavFilePath = inputPath.replace('.webm', '_converted.wav');
         await new Promise<void>((resolve, reject) => {
             this.currentFfmpegCommand = ffmpeg(inputPath)
-                .inputOptions([
-                    '-f webm',  // 入力フォーマットを明示的に指定
-                    '-c:a opus',  // Web Audio APIのデフォルトコーデック
-                    '-analyzeduration 0',  // 入力ファイルの解析時間を短縮
-                    '-probesize 32768'  // プローブサイズを小さく設定
-                ])
+                .inputOptions(['-f webm', '-c:a opus', '-analyzeduration 0', '-probesize 32768'])
                 .toFormat('wav')
                 .audioCodec('pcm_s16le')
                 .audioFrequency(16000)
@@ -229,6 +189,42 @@ export class AudioProcessor {
         return wavFilePath;
     }
 
+    private formatTime(timeInSeconds: number): string {
+        const hours = Math.floor(timeInSeconds / 3600);
+        const minutes = Math.floor((timeInSeconds % 3600) / 60);
+        const seconds = Math.floor(timeInSeconds % 60);
+        return hours > 0
+            ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+            : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    private parseTimestamp(timestamp: string): number {
+        // Format: [HH:]MM:SS.mmm
+        const match = timestamp.match(/^(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})$/);
+        if (!match) {
+            console.error('Invalid timestamp format:', timestamp);
+            return 0;
+        }
+
+        // match[1]が存在する場合は時間あり、存在しない場合は分から始まる
+        const hours = match[1] ? parseInt(match[1], 10) : 0;
+        const minutes = parseInt(match[2], 10);
+        const seconds = parseInt(match[3], 10);
+        const milliseconds = parseInt(match[4], 10);
+
+        const totalSeconds = (hours * 3600) + (minutes * 60) + seconds + (milliseconds / 1000);
+        console.log('[parseTimestamp]', {
+            input: timestamp,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            totalSeconds,
+            formatted: this.formatTime(totalSeconds)
+        });
+        return totalSeconds;
+    }
+
     private async runTranscription(
         audioPath: string,
         settings: {
@@ -248,74 +244,144 @@ export class AudioProcessor {
                 return;
             }
 
-            // MLX Whisperは入力ファイル名をベースに出力ファイルを生成
             const outputName = path.basename(audioPath, path.extname(audioPath));
             const outputPath = path.join(this.tempDir, `${outputName}.txt`);
             const command = [
                 this.mlxWhisperPath,
                 audioPath,
-                "--model", `mlx-community/whisper-${settings.modelSize}-v3-turbo`,
+                "--model", `mlx-community/whisper-large-v3-turbo`,
                 "--language", settings.language,
                 "--output-format", "txt",
                 "--output-dir", this.tempDir,
-                "--verbose", "False"
+                "--condition-on-previous-text", "False"
             ];
 
+            console.log('[Whisper Command]:', venvPython, command.join(' '));
+            // PYTHONUNBUFFEREDを設定してPythonの出力バッファリングを無効化
             this.currentChildProcess = spawn(venvPython, command, {
                 env: {
                     ...process.env,
-                    PATH: `/opt/homebrew/bin:${process.env.PATH || ''}`
-                }
+                    PATH: `/opt/homebrew/bin:${process.env.PATH || ''}`,
+                    PYTHONUNBUFFERED: '1'
+                },
+                stdio: ['pipe', 'pipe', 'pipe']  // 標準出力と標準エラー出力のバッファリングを制御
             });
 
             let transcription = '';
+            let totalDuration: number | null = null;
+            let lastProgressUpdate = 0;
+            let processingStartTime = Date.now();
 
-            this.currentChildProcess.stdout.on('data', (data: Buffer) => {
-                const output = data.toString();
-                const progressMatch = output.match(/Progress: (\d+)%/);
-                if (progressMatch) {
-                    this.onProgressUpdate(`文字起こし中... ${progressMatch[1]}%`);
-                }
-                transcription += output;
-            });
+            console.log('[Transcription Start]:', new Date().toISOString());
 
-            this.currentChildProcess.stderr.on('data', (data: Buffer) => {
-                const output = data.toString();
-                // %で終わる行は進捗情報として処理
-                if (output.includes('%')) {
-                    const progressMatch = output.match(/(\d+)%/);
-                    if (progressMatch) {
-                        this.onProgressUpdate(`文字起こし中... ${progressMatch[1]}%`);
+            const getDuration = new Promise<void>((resolve) => {
+                ffmpeg.ffprobe(audioPath, (err, metadata) => {
+                    if (!err && metadata.format.duration) {
+                        totalDuration = metadata.format.duration;
+                        console.log('[Audio Duration]:', totalDuration, 'seconds');
+                    } else if (err) {
+                        console.error('[FFprobe error]:', err);
                     }
-                } else if (output.includes('Error') || output.includes('error')) {
-                    // 実際のエラーメッセージのみを表示
-                    console.error(`Transcription Error: ${output}`);
-                    this.onError(`文字起こし中にエラーが発生しました: ${output}`);
-                }
+                    resolve();
+                });
             });
 
-            this.currentChildProcess.on('close', async (code: number) => {
-                if (code === 0) {
-                    try {
-                        // 出力ファイルの存在確認と読み取り
-                        if (fs.existsSync(outputPath)) {
-                            const result = await fs.promises.readFile(outputPath, 'utf-8');
-                            resolve(result.trim());
-                            // 一時ファイルを削除
-                            fs.promises.unlink(outputPath).catch(console.error);
-                        } else {
-                            reject(new Error('文字起こし結果のファイルが見つかりません'));
+            getDuration.then(() => {
+                let buffer = '';
+                this.currentChildProcess.stdout.on('data', (data: Buffer) => {
+                    const output = data.toString();
+                    buffer += output;
+                    console.log('[Whisper stdout]:', output);
+
+                    // バッファから完全な行を処理
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // 最後の不完全な行を保持
+
+                    for (const line of lines) {
+                        transcription += line + '\n';
+
+                        // タイムスタンプの形式を[MM:SS.mmm]または[HH:MM:SS.mmm]に対応
+                        const timestampMatch = line.match(/\[(?:(\d{2}):)?(\d{2}):(\d{2}\.\d{3})\s*-->\s*(?:(\d{2}):)?(\d{2}):(\d{2}\.\d{3})\]/);
+                        if (timestampMatch) {
+                            console.log('[Timestamp detected]:', {
+                                raw: timestampMatch[0],
+                                groups: timestampMatch.slice(1),
+                                endTimeStr: timestampMatch[4]
+                                    ? `${timestampMatch[4]}:${timestampMatch[5]}:${timestampMatch[6]}`
+                                    : `${timestampMatch[2]}:${timestampMatch[3]}`,
+                                containsHours: !!timestampMatch[4]
+                            });
+                            // 終了時間を使用（時間あり：4,5,6、時間なし：2,3）
+                            const endTimeStr = timestampMatch[4]
+                                ? `${timestampMatch[4]}:${timestampMatch[5]}:${timestampMatch[6]}`
+                                : `${timestampMatch[2]}:${timestampMatch[3]}`;
+                            const currentTime = this.parseTimestamp(endTimeStr);
+                            // 時間が前に戻らないように確認
+                            if (totalDuration && currentTime > lastProgressUpdate) {
+                                lastProgressUpdate = currentTime;
+                                const progress = Math.min(Math.round((currentTime / totalDuration) * 100), 100);
+                                const elapsedTime = (Date.now() - processingStartTime) / 1000;
+                                const currentTimeFormatted = this.formatTime(currentTime);
+                                const totalTimeFormatted = totalDuration ? this.formatTime(totalDuration) : '0:00';
+
+                                console.log('[Progress]:', {
+                                    percent: progress,
+                                    currentTime,
+                                    totalDuration,
+                                    lastUpdate: lastProgressUpdate,
+                                    elapsedProcessingTime: elapsedTime.toFixed(1) + 's',
+                                    currentLine: line
+                                });
+                                this.onProgressUpdate(
+                                    `${currentTimeFormatted} / ${totalTimeFormatted} (${progress}%)`
+                                );
+                            } else {
+                                this.onProgressUpdate('文字起こし中...');
+                            }
                         }
-                    } catch (error) {
-                        reject(new Error(`文字起こし結果の読み取りに失敗: ${error.message}`));
                     }
-                } else {
-                    const errorMsg = transcription.includes('Error:')
-                        ? transcription.match(/Error: (.*?)$/m)?.[1] || 'Unknown error'
-                        : transcription;
-                    reject(new Error(`Transcription failed: ${errorMsg}`));
-                }
-                this.currentChildProcess = null;
+                });
+
+                this.currentChildProcess.stderr.on('data', (data: Buffer) => {
+                    const output = data.toString();
+                    console.log('[Whisper stderr]:', output);
+
+                    // エラー検出
+                    if (output.includes('Error') || output.includes('error')) {
+                        console.error(`Transcription Error: ${output}`);
+                        this.onError(`文字起こし中にエラーが発生しました: ${output}`);
+                    }
+                });
+
+                this.currentChildProcess.on('close', async (code: number) => {
+                    if (code === 0) {
+                        try {
+                            if (fs.existsSync(outputPath)) {
+                                const result = await fs.promises.readFile(outputPath, 'utf-8');
+                                // 結果をそのまま使用
+                                const textContent = result.trim();
+                                const processingTime = ((Date.now() - processingStartTime) / 1000).toFixed(1);
+                                console.log('[Transcription Complete]:', {
+                                    processingTime: `${processingTime}s`,
+                                    contentLength: textContent.length
+                                });
+                                this.onProgressUpdate('文字起こしが完了しました');
+                                resolve(textContent);
+                                fs.promises.unlink(outputPath).catch(console.error);
+                            } else {
+                                reject(new Error('文字起こし結果のファイルが見つかりません'));
+                            }
+                        } catch (error) {
+                            reject(new Error(`文字起こし結果の読み取りに失敗: ${error.message}`));
+                        }
+                    } else {
+                        const errorMsg = transcription.includes('Error:')
+                            ? transcription.match(/Error: (.*?)$/m)?.[1] || 'Unknown error'
+                            : transcription;
+                        reject(new Error(`Transcription failed: ${errorMsg}`));
+                    }
+                    this.currentChildProcess = null;
+                });
             });
         });
     }

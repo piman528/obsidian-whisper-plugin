@@ -59,19 +59,6 @@ export default class WhisperPlugin extends Plugin {
             }
         });
 
-        this.addCommand({
-            id: 'transcribe-desktop-file',
-            name: 'デスクトップのtest.m4aを文字起こし',
-            callback: async () => {
-                const desktopFilePath = path.join(process.env.HOME || '', 'Desktop', 'test.m4a');
-                if (fs.existsSync(desktopFilePath)) {
-                    await this.transcribeExternalFile(desktopFilePath);
-                } else {
-                    new Notice('デスクトップにtest.m4aファイルが見つかりません');
-                }
-            }
-        });
-
         this.statusBarItem = this.addStatusBarItem();
         this.statusBarItem.hide();
 
